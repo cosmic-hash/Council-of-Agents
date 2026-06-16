@@ -10,13 +10,13 @@ interface ViewToggleProps {
 
 export function ViewToggle({ view, onChange }: ViewToggleProps) {
   return (
-    <div className="flex items-center gap-1 rounded-full border border-white/10 bg-black/30 p-0.5 backdrop-blur-sm">
+    <div className="flex items-center gap-1 rounded-full border border-surface-border bg-background p-0.5">
       <button
         onClick={() => onChange("thread")}
         className={`rounded-full px-3 py-1 font-mono text-[10px] transition-all ${
           view === "thread"
-            ? "bg-white/10 text-cream"
-            : "text-gray-500 hover:text-gray-400"
+            ? "bg-surface text-ink shadow-sm"
+            : "text-foreground-muted hover:text-foreground"
         }`}
       >
         ≡ Thread
@@ -25,8 +25,8 @@ export function ViewToggle({ view, onChange }: ViewToggleProps) {
         onClick={() => onChange("duel")}
         className={`rounded-full px-3 py-1 font-mono text-[10px] transition-all ${
           view === "duel"
-            ? "bg-white/10 text-cream"
-            : "text-gray-500 hover:text-gray-400"
+            ? "bg-surface text-ink shadow-sm"
+            : "text-foreground-muted hover:text-foreground"
         }`}
       >
         ⬛ Duel

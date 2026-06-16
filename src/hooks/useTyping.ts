@@ -7,6 +7,7 @@ interface UseTypingOptions {
   wpm: number;
   enabled: boolean;
   onComplete?: () => void;
+  onWordTick?: () => void;
   mode?: "word" | "letter";
   pauseBetweenSentences?: number;
 }
@@ -16,6 +17,7 @@ export function useTyping({
   wpm,
   enabled,
   onComplete,
+  onWordTick,
   mode = "word",
   pauseBetweenSentences = 500,
 }: UseTypingOptions) {
@@ -26,7 +28,7 @@ export function useTyping({
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sentencesRef = useRef<string[]>([]);
 
-  const msPerUnit = mode === "letter" ? 60000 / (wpm * 5) : 60000 / wpm;
+  const msPerUnit = mode === "letter" ? 60000 / (wpm * 6) : 60000 / wpm;
 
   const reset = useCallback(() => {
     indexRef.current = 0;
@@ -55,10 +57,11 @@ export function useTyping({
 
       indexRef.current += 1;
       setDisplayed(units.slice(0, indexRef.current).join(""));
+      onWordTick?.();
 
       const currentText = units.slice(0, indexRef.current).join("");
       const endsSentence = /[.!?]\s*$/.test(currentText);
-      const delay = endsSentence ? pauseBetweenSentences : msPerUnit;
+      const delay = endsSentence ? Math.min(pauseBetweenSentences, 150) : msPerUnit;
 
       timeoutRef.current = setTimeout(tick, delay);
     };
@@ -68,7 +71,7 @@ export function useTyping({
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [enabled, text, wpm, mode, msPerUnit, pauseBetweenSentences, onComplete]);
+  }, [enabled, text, wpm, mode, msPerUnit, pauseBetweenSentences, onComplete, onWordTick]);
 
   const advanceSentence = useCallback(() => {
     const sentences = sentencesRef.current;
