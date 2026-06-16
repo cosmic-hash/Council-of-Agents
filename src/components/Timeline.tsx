@@ -51,7 +51,7 @@ export function Timeline({
     activeIndex < 4 ? "Opening" : activeIndex < 8 ? "Rebuttals" : "Verdict";
 
   return (
-    <div className="border-t border-surface-border px-8 py-4">
+    <div className="border-t border-surface-border px-4 py-4 sm:px-8">
       <div className="relative mx-auto max-w-2xl">
         <AnimatePresence mode="wait">
           <motion.div
@@ -103,7 +103,8 @@ export function Timeline({
           )}
         </div>
 
-        <div className="flex items-center justify-between pt-2">
+        <div className="overflow-x-auto pb-1">
+          <div className="flex min-w-[320px] items-center justify-between pt-2">
           {TIMELINE_AGENTS.map((agentId, i) => {
             const agent = AGENTS[agentId];
             const isPast = i < activeIndex || isComplete;
@@ -143,6 +144,7 @@ export function Timeline({
               </button>
             );
           })}
+          </div>
         </div>
 
         <p className="mt-2 text-center font-mono text-[9px] text-foreground-muted">

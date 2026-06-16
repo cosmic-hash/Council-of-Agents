@@ -143,13 +143,13 @@ export default function CouncilPage() {
       />
 
       {appPhase === "setup" && (
-        <div className="relative z-10 flex h-full flex-col items-center overflow-y-auto px-6 py-12">
+        <div className="relative z-10 flex h-full flex-col items-center overflow-y-auto px-4 py-6 sm:px-6 sm:py-12">
           <div className="mb-2 flex w-full max-w-3xl items-center justify-end gap-2">
             {mounted && <ThemeToggle theme={theme} onToggle={toggleTheme} />}
             <ViewToggle view={view} onChange={setView} />
           </div>
 
-          <h1 className="mb-2 font-playfair text-5xl font-bold text-ink">
+          <h1 className="mb-2 text-center font-playfair text-3xl font-bold text-ink sm:text-5xl">
             Council of Agents
           </h1>
           <p className="mb-10 font-inter text-sm font-light text-foreground-muted">

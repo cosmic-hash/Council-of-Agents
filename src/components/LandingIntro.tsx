@@ -18,7 +18,7 @@ export function LandingIntro({ hasApiKey }: LandingIntroProps) {
   const livePending = hasApiKey === null;
 
   return (
-    <div className="space-y-6 rounded-xl border border-surface-border bg-surface/80 p-6 backdrop-blur-sm">
+    <div className="space-y-6 rounded-xl border border-surface-border bg-surface/80 p-4 backdrop-blur-sm sm:p-6">
       <section>
         <h2 className="mb-2 font-mono text-[10px] uppercase tracking-widest text-violet-600 dark:text-violet-400">
           What is Council of Agents?

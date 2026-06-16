@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AGENTS, AUTO_ADVANCE_KEY, MODES } from "@/lib/constants";
+import { AGENTS, AUTO_ADVANCE_KEY, MODES, VOICE_OUT_KEY } from "@/lib/constants";
 import type { AgentId, DebateMode, DebatePhase, Exchange, ViewMode } from "@/lib/types";
 import { agentMentionsOther } from "@/lib/heat";
 import { parseSentiment } from "@/lib/prompts";
 import { useTyping } from "@/hooks/useTyping";
 import { useAutoAdvance } from "@/hooks/useAutoAdvance";
+import { useVoiceOut } from "@/hooks/useVoiceOut";
 import type { Theme } from "@/hooks/useTheme";
 import { Timeline } from "./Timeline";
 import { SpeedSlider } from "./SpeedSlider";
@@ -17,6 +18,8 @@ import { NewQuestionPill } from "./NewQuestionPill";
 import { ViewToggle } from "./ViewToggle";
 import { ThemeToggle } from "./ThemeToggle";
 import { AutoAdvanceToggle } from "./AutoAdvanceToggle";
+import { VoiceToggle } from "./VoiceToggle";
+import { DebateStatusBar, type DebateStatusKind, type DebateStatusPhase } from "./DebateStatusBar";
 import { CouncilRoster } from "./CouncilRoster";
 import { CenteredStage } from "./stages/CenteredStage";
 import { SplitStage } from "./stages/SplitStage";
@@ -72,13 +75,21 @@ export function DuelView({
   const [energyBeam, setEnergyBeam] = useState(false);
   const [wordBump, setWordBump] = useState(0);
   const [autoAdvance, setAutoAdvance] = useState(true);
+  const [voiceOut, setVoiceOut] = useState(false);
   const sentenceModeRef = useRef(false);
   const autoAdvanceCancelRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem(AUTO_ADVANCE_KEY);
     if (stored !== null) setAutoAdvance(stored === "true");
+    const voiceStored = localStorage.getItem(VOICE_OUT_KEY);
+    if (voiceStored !== null) setVoiceOut(voiceStored === "true");
   }, []);
+
+  const handleVoiceOutChange = (enabled: boolean) => {
+    setVoiceOut(enabled);
+    localStorage.setItem(VOICE_OUT_KEY, String(enabled));
+  };
 
   const handleAutoAdvanceChange = (enabled: boolean) => {
     setAutoAdvance(enabled);
@@ -338,6 +349,46 @@ export function DuelView({
         ? 8
         : -1;
 
+  const voiceText = isVerdictScene
+    ? verdictSentences.slice(0, verdictSentenceIdx + 1).join(" ")
+    : displayed;
+
+  const voiceTypingComplete = isVerdictScene
+    ? verdictSentenceIdx >= verdictSentences.length - 1
+    : typingComplete;
+
+  useVoiceOut({
+    enabled: voiceOut && stageReady && !isQuestionScene && !isJudgeIntro,
+    text: voiceText,
+    sceneKey: sceneIndex,
+    typingComplete: voiceTypingComplete,
+  });
+
+  const statusAgent =
+    isVerdictScene || isJudgeIntro ? AGENTS.judge : currentAgent ?? null;
+
+  const debatePhase: DebateStatusPhase = isQuestionScene
+    ? "question"
+    : isJudgeIntro
+      ? "intro"
+      : isVerdictScene
+        ? "verdict"
+        : currentExchange?.phase === "rebuttal"
+          ? "rebuttal"
+          : "opening";
+
+  const debateStatus: DebateStatusKind = isJudgeIntro
+    ? "idle"
+    : isVerdictScene
+      ? "delivering_verdict"
+      : isStreaming && waitingForUser && !canAdvance
+        ? "deliberating"
+        : !typingComplete && (currentScene?.type === "exchange" || isQuestionScene)
+          ? "speaking"
+          : waitingForUser
+            ? "listening"
+            : "idle";
+
   return (
     <div className="relative flex h-full flex-col">
       {edgeFlash && (
@@ -350,16 +401,17 @@ export function DuelView({
         />
       )}
 
-      <div className="flex items-center justify-between px-6 py-4">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-2 px-4 py-3 md:flex-row md:items-center md:justify-between md:px-6 md:py-4">
+        <div className="flex items-center justify-center gap-2 md:justify-start">
           <ThemeToggle theme={theme} onToggle={onThemeToggle} />
           <AutoAdvanceToggle enabled={autoAdvance} onChange={handleAutoAdvanceChange} />
+          <VoiceToggle enabled={voiceOut} onChange={handleVoiceOutChange} />
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center justify-center gap-3">
           <NewQuestionPill onClick={onNewQuestion} />
           <ViewToggle view={view} onChange={onViewChange} />
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center justify-center gap-3 md:justify-end">
           <span className="font-mono text-[10px] text-foreground-muted">
             {modeConfig.icon} {modeConfig.label}
           </span>
@@ -370,6 +422,14 @@ export function DuelView({
           />
         </div>
       </div>
+
+      {stageReady && (
+        <DebateStatusBar
+          phase={debatePhase}
+          activeAgent={statusAgent}
+          status={debateStatus}
+        />
+      )}
 
       {stageReady && (
         <CouncilRoster
@@ -401,7 +461,7 @@ export function DuelView({
       >
         {isQuestionScene && !questionAnchored && (
           <div className="relative flex flex-1 items-center justify-center px-8">
-            <p className="max-w-2xl text-center font-playfair text-4xl italic text-ink">
+            <p className="max-w-2xl text-center font-playfair text-2xl italic text-ink sm:text-4xl">
               {displayed}
               {!typingComplete && (
                 <span className="ml-0.5 inline-block h-8 w-0.5 animate-pulse bg-ink" />
@@ -547,7 +607,7 @@ export function DuelView({
       {isComplete && (
         <button
           onClick={onReplay}
-          className="absolute right-6 top-16 font-mono text-[10px] text-foreground-muted hover:text-foreground"
+          className="absolute right-4 top-24 font-mono text-[10px] text-foreground-muted hover:text-foreground md:right-6 md:top-16"
         >
           ⟳ Replay from start
         </button>

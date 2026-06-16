@@ -1,6 +1,7 @@
 "use client";
 
 import { getHeatVisuals } from "@/lib/theme";
+import { getParticleColor } from "@/lib/heat";
 import type { AppTheme } from "@/lib/heat";
 import type { DebateMode } from "@/lib/types";
 import { getModeStageFilter } from "@/lib/visuals";
@@ -21,10 +22,11 @@ export function AmbientBackground({
   theme = "light",
 }: AmbientBackgroundProps) {
   const visuals = getHeatVisuals(heatLevel, mode, isVerdict, isPreview, theme);
-  const { gradient, particleColor, resolutionTransitionMs } = visuals;
+  const { gradient, resolutionTransitionMs } = visuals;
 
-  const particleCount = Math.round(12 + (heatLevel / 100) * 3);
+  const particleCount = Math.round(8 + (heatLevel / 100) * 2);
   const particleDuration = Math.max(8, 20 - (heatLevel / 100) * 12);
+  const particleColor = getParticleColor(heatLevel);
 
   const backgroundImage = gradient.layers.join(", ");
   const transitionMs = isVerdict ? resolutionTransitionMs : visuals.heatTransitionMs;
@@ -40,25 +42,17 @@ export function AmbientBackground({
         }}
       />
 
-      <div
-        className="breathing-glow pointer-events-none absolute inset-x-0 top-0 h-1/2"
-        style={{
-          background: `radial-gradient(ellipse 60% 40% at 50% 0%, rgba(124, 58, 237, ${0.12 + (heatLevel / 100) * 0.16}) 0%, transparent 70%)`,
-        }}
-      />
-
       {Array.from({ length: particleCount }).map((_, i) => (
         <div
           key={i}
           className="particle absolute rounded-full"
           style={{
-            width: "4px",
-            height: "4px",
+            width: "3px",
+            height: "3px",
             left: `${(i * 17 + 5) % 100}%`,
             backgroundColor: particleColor,
             animationDuration: `${particleDuration + (i % 5)}s`,
             animationDelay: `${i * 0.8}s`,
-            transition: "background-color 1000ms ease",
           }}
         />
       ))}

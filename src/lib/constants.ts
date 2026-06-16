@@ -86,6 +86,7 @@ export const SPEED_PRESETS = {
 
 export const AUTO_ADVANCE_KEY = "council_auto_advance";
 export const THEME_KEY = "council_theme";
+export const VOICE_OUT_KEY = "council_voice_out";
 
 export const COUNCIL_ROSTER_ORDER = [
   "optimist",

@@ -22,8 +22,9 @@ export function CouncilRoster({
   const spokenSet = new Set(spokenAgentIds);
 
   return (
-    <div className="border-b border-surface-border px-6 py-2">
-      <div className="mx-auto flex max-w-3xl items-center justify-between">
+    <div className="border-b border-surface-border px-4 py-2 md:px-6">
+      <div className="mx-auto max-w-3xl overflow-x-auto">
+        <div className="flex min-w-max items-center justify-between gap-4 px-1 md:min-w-0 md:gap-0">
         {COUNCIL_ROSTER_ORDER.map((agentId) => {
           const agent = AGENTS[agentId];
           const isActive = isVerdictPhase
@@ -75,6 +76,7 @@ export function CouncilRoster({
             </motion.div>
           );
         })}
+        </div>
       </div>
     </div>
   );
