@@ -1,0 +1,6 @@
+#!/bin/sh
+# Reject commits that still mention cursoragent.
+if grep -qi 'cursoragent' "$1"; then
+  echo "error: commit message must not mention cursoragent" >&2
+  exit 1
+fi

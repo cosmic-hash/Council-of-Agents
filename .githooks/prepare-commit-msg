@@ -1,0 +1,9 @@
+#!/bin/sh
+# Strip any Cursor co-author trailers from commit messages.
+if [ -f "$1" ]; then
+  if sed --version >/dev/null 2>&1; then
+    sed -i '/cursoragent/Id' "$1"
+  else
+    sed -i '' '/cursoragent/Id' "$1"
+  fi
+fi

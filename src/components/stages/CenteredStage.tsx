@@ -33,7 +33,13 @@ export function CenteredStage({
 }: CenteredStageProps) {
   return (
     <div className="relative flex flex-1 flex-col items-center justify-center px-8">
-      <SentimentPulse sentiment={sentiment} theme={theme} wordBump={wordBump} />
+      <SentimentPulse
+        sentiment={sentiment}
+        theme={theme}
+        wordBump={wordBump}
+        isSpeaking={!typingComplete}
+        agentColor={agent?.color}
+      />
 
       {showQuestionOrb && (
         <motion.div
@@ -77,7 +83,7 @@ export function CenteredStage({
           {role && (
             <span className="font-mono text-[11px] text-foreground-muted">{role}</span>
           )}
-          <p className="mt-6 max-w-lg text-center font-inter text-[15px] font-light leading-relaxed text-debate-text">
+          <p className="debate-body mt-6 max-w-lg text-center font-inter text-[15px] font-normal leading-relaxed text-debate-text">
             {displayed}
             {!typingComplete && (
               <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-debate-text" />

@@ -8,7 +8,7 @@
   --foreground-muted: #78716c;
   --surface: #ffffff;
   --surface-border: #e7e5e4;
-  --debate-text: #44403c;
+  --debate-text: #1c1917;
   --accent-violet: #7c3aed;
 }
 
@@ -18,7 +18,7 @@
   --foreground-muted: #a8a29e;
   --surface: #14141c;
   --surface-border: #2a2a35;
-  --debate-text: #d6d3d1;
+  --debate-text: #f0ead6;
   --accent-violet: #a78bfa;
 }
 
@@ -134,4 +134,77 @@ body {
 
 .sentiment-pulse {
   animation: sentiment-heartbeat ease-in-out infinite;
+}
+
+.debate-body {
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.08);
+}
+
+.dark .debate-body {
+  text-shadow: 0 1px 16px rgba(0, 0, 0, 0.45);
+}
+
+@keyframes speaking-orb-drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  33% {
+    transform: translate(24px, -20px);
+  }
+  66% {
+    transform: translate(-18px, 16px);
+  }
+}
+
+@keyframes speaking-orb-idle-float {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(6px, -8px);
+  }
+}
+
+@keyframes speaking-orb-scale-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.14);
+  }
+}
+
+.speaking-orb-drift-wrap {
+  animation: speaking-orb-drift 2.2s ease-in-out infinite;
+}
+
+.speaking-orb-idle-wrap {
+  animation: speaking-orb-idle-float 5s ease-in-out infinite;
+}
+
+.speaking-orb-scale {
+  height: 14rem;
+  width: 14rem;
+  border-radius: 9999px;
+  filter: blur(48px);
+  animation: speaking-orb-scale-pulse 4s ease-in-out infinite;
+}
+
+.speaking-orb-scale-active {
+  animation: speaking-orb-scale-pulse 0.85s ease-in-out infinite;
+}
+
+.speaking-orb-jolt {
+  transform: scale(1.12);
+  transition: transform 0.15s ease-out;
+}
+
+@media (min-width: 768px) {
+  .speaking-orb-scale {
+    height: 18rem;
+    width: 18rem;
+  }
 }

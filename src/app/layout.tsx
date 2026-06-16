@@ -32,6 +32,18 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <script
+          type="importmap"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              imports: {
+                "onnxruntime-web": "/vendor/onnx/ort.bundle.min.mjs",
+              },
+            }),
+          }}
+        />
+      </head>
       <body
         className={`${playfair.variable} ${inter.variable} ${jetbrains.variable} font-inter antialiased`}
       >

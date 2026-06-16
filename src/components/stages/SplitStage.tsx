@@ -89,7 +89,13 @@ export function SplitStage({
         animate={{ opacity: 1 }}
         className="relative flex w-full flex-col items-center justify-center px-4 py-6 md:w-1/2 md:px-6"
       >
-        <SentimentPulse sentiment={sentiment} theme={theme} wordBump={wordBump} />
+        <SentimentPulse
+          sentiment={sentiment}
+          theme={theme}
+          wordBump={wordBump}
+          isSpeaking={!typingComplete}
+          agentColor={currentAgent.color}
+        />
 
         {energyBeam && (
           <motion.div
@@ -122,7 +128,7 @@ export function SplitStage({
         <span className="relative font-mono text-[11px] text-foreground-muted">
           {currentAgent.role}
         </span>
-        <p className="relative mt-4 max-w-sm text-center font-inter text-sm font-light leading-relaxed text-debate-text md:mt-6 md:text-[15px]">
+        <p className="debate-body relative mt-4 max-w-sm text-center font-inter text-sm font-normal leading-relaxed text-debate-text md:mt-6 md:text-[15px]">
           {displayed}
           {!typingComplete && (
             <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-debate-text" />

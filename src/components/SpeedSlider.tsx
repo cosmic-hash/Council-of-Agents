@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SPEED_PRESETS } from "@/lib/constants";
+import { MAX_WPM, MIN_WPM, SPEED_PRESETS } from "@/lib/constants";
 
 interface SpeedSliderProps {
   value: number;
@@ -10,8 +10,6 @@ interface SpeedSliderProps {
 }
 
 export function SpeedSlider({ value, modeDefault, onChange }: SpeedSliderProps) {
-  const min = 30;
-  const max = 150;
   const [dragValue, setDragValue] = useState(value);
 
   useEffect(() => {
@@ -25,25 +23,18 @@ export function SpeedSlider({ value, modeDefault, onChange }: SpeedSliderProps) 
     { label: "Turbo", wpm: SPEED_PRESETS.turbo },
   ];
 
-  const snapToPreset = (v: number) => {
-    const allPresets = presets.map((p) => p.wpm);
-    return allPresets.reduce((prev, curr) =>
-      Math.abs(curr - v) < Math.abs(prev - v) ? curr : prev
-    );
-  };
-
   return (
     <div className="flex items-center gap-2">
       <span className="text-sm">🐢</span>
       <input
         type="range"
-        min={min}
-        max={max}
+        min={MIN_WPM}
+        max={MAX_WPM}
         value={dragValue}
         onChange={(e) => setDragValue(Number(e.target.value))}
-        onMouseUp={() => onChange(snapToPreset(dragValue))}
-        onTouchEnd={() => onChange(snapToPreset(dragValue))}
-        className="h-1 w-20 cursor-pointer appearance-none rounded-full bg-surface-border accent-violet-500"
+        onMouseUp={() => onChange(dragValue)}
+        onTouchEnd={() => onChange(dragValue)}
+        className="h-1 w-24 cursor-pointer appearance-none rounded-full bg-surface-border accent-violet-500"
         title="Hold Shift+Space to advance one sentence at a time"
       />
       <span className="text-sm">🐇</span>

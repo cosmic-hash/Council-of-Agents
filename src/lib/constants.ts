@@ -77,16 +77,24 @@ export const MODES: Record<DebateMode, ModeConfig> = {
   },
 };
 
+export const MIN_WPM = 100;
+export const MAX_WPM = 250;
+export const DEFAULT_WPM = 150;
+export const DEFAULT_DEBATE_MODE = "moderate" as const;
+
 export const SPEED_PRESETS = {
-  slow: 40,
-  normal: null as number | null,
-  fast: 120,
-  turbo: 150,
+  slow: MIN_WPM,
+  normal: DEFAULT_WPM,
+  fast: 200,
+  turbo: MAX_WPM,
 };
 
 export const AUTO_ADVANCE_KEY = "council_auto_advance";
 export const THEME_KEY = "council_theme";
 export const VOICE_OUT_KEY = "council_voice_out";
+export const VOICE_URI_KEY = "council_voice_uri";
+export const PIPER_VOICE_KEY = "council_piper_voice";
+export const TTS_ENGINE_KEY = "council_tts_engine";
 
 export const COUNCIL_ROSTER_ORDER = [
   "optimist",

@@ -12,7 +12,7 @@ import { ThreadView } from "@/components/ThreadView";
 import { UserContextInput } from "@/components/UserContextInput";
 import { ViewToggle } from "@/components/ViewToggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { USER_CONTEXT_KEY } from "@/lib/constants";
+import { DEFAULT_DEBATE_MODE, USER_CONTEXT_KEY } from "@/lib/constants";
 import type { DebateMessage, DebateMode, ViewMode } from "@/lib/types";
 import { useDebate } from "@/hooks/useDebate";
 import { useFirstVisit } from "@/hooks/useFirstVisit";
@@ -27,7 +27,7 @@ const DEFAULT_PREVIEW_QUESTION =
 export default function CouncilPage() {
   const [appPhase, setAppPhase] = useState<AppPhase>("setup");
   const [view, setView] = useState<ViewMode>("duel");
-  const [selectedMode, setSelectedMode] = useState<DebateMode | null>(null);
+  const [selectedMode, setSelectedMode] = useState<DebateMode>(DEFAULT_DEBATE_MODE);
   const [question, setQuestion] = useState("");
   const [userContext, setUserContext] = useState("");
   const [submittedQuestion, setSubmittedQuestion] = useState("");
@@ -59,11 +59,9 @@ export default function CouncilPage() {
 
   const runDebateSession = useCallback(
     async (preview: boolean) => {
-      const mode = selectedMode || "moderate";
+      const mode = selectedMode;
       const q = question.trim() || (preview ? DEFAULT_PREVIEW_QUESTION : "");
-      if (!preview && (!selectedMode || !q)) return;
-
-      if (!selectedMode) setSelectedMode(mode);
+      if (!preview && !q) return;
       setSubmittedQuestion(q);
       setAppPhase("debating");
       setDismissedError(false);
@@ -106,7 +104,7 @@ export default function CouncilPage() {
     setAppPhase("setup");
     setQuestion("");
     setSubmittedQuestion("");
-    setSelectedMode(null);
+    setSelectedMode(DEFAULT_DEBATE_MODE);
     setDismissedError(false);
   }, [resetDebate, resetHeat]);
 
@@ -115,7 +113,7 @@ export default function CouncilPage() {
     resetHeat();
   }, [resetHeat]);
 
-  const modeForVisuals = selectedMode || "moderate";
+  const modeForVisuals = selectedMode;
 
   return (
     <main className="relative h-screen overflow-hidden bg-background">
@@ -182,7 +180,7 @@ export default function CouncilPage() {
               <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                 <button
                   onClick={handleSubmit}
-                  disabled={!selectedMode || !question.trim()}
+                  disabled={!question.trim()}
                   className="flex-1 rounded-xl border border-violet-200 bg-violet-50 py-4 font-inter text-sm font-medium text-violet-900 transition-all hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200 dark:hover:bg-violet-900/50"
                 >
                   Convene the Council
@@ -194,11 +192,6 @@ export default function CouncilPage() {
                   Try preview
                 </button>
               </div>
-              {!selectedMode && (
-                <p className="mt-2 text-center font-mono text-[10px] text-foreground-muted">
-                  Try preview works without an API key — pick a mode or we&apos;ll use Moderate
-                </p>
-              )}
             </div>
           </div>
         </div>
@@ -209,7 +202,7 @@ export default function CouncilPage() {
           {view === "duel" ? (
             <DuelView
               question={submittedQuestion}
-              mode={selectedMode!}
+              mode={selectedMode}
               exchanges={exchanges}
               verdict={verdict}
               isStreaming={isStreaming}

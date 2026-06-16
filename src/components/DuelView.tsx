@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AGENTS, AUTO_ADVANCE_KEY, MODES, VOICE_OUT_KEY } from "@/lib/constants";
+import { AGENTS, AUTO_ADVANCE_KEY, DEFAULT_WPM, MODES, PIPER_VOICE_KEY, VOICE_OUT_KEY } from "@/lib/constants";
+import { DEFAULT_PIPER_VOICE } from "@/lib/piperVoices";
 import type { AgentId, DebateMode, DebatePhase, Exchange, ViewMode } from "@/lib/types";
 import { agentMentionsOther } from "@/lib/heat";
 import { parseSentiment } from "@/lib/prompts";
 import { useTyping } from "@/hooks/useTyping";
+import { useSyncedNarration } from "@/hooks/useSyncedNarration";
 import { useAutoAdvance } from "@/hooks/useAutoAdvance";
 import { useVoiceOut } from "@/hooks/useVoiceOut";
 import type { Theme } from "@/hooks/useTheme";
@@ -19,8 +21,12 @@ import { ViewToggle } from "./ViewToggle";
 import { ThemeToggle } from "./ThemeToggle";
 import { AutoAdvanceToggle } from "./AutoAdvanceToggle";
 import { VoiceToggle } from "./VoiceToggle";
+import { VoicePicker } from "./VoicePicker";
+import { VoiceLoadingToast } from "./VoiceLoadingToast";
+import { VerdictCTA } from "./VerdictCTA";
 import { DebateStatusBar, type DebateStatusKind, type DebateStatusPhase } from "./DebateStatusBar";
 import { CouncilRoster } from "./CouncilRoster";
+import { SentimentPulse } from "./SentimentPulse";
 import { CenteredStage } from "./stages/CenteredStage";
 import { SplitStage } from "./stages/SplitStage";
 
@@ -64,7 +70,7 @@ export function DuelView({
   heatLevel,
 }: DuelViewProps) {
   const modeConfig = MODES[mode];
-  const [wpm, setWpm] = useState(modeConfig.typingSpeed);
+  const [wpm, setWpm] = useState(DEFAULT_WPM);
   const [sceneIndex, setSceneIndex] = useState(0);
   const [questionAnchored, setQuestionAnchored] = useState(false);
   const [stageReady, setStageReady] = useState(false);
@@ -75,7 +81,10 @@ export function DuelView({
   const [energyBeam, setEnergyBeam] = useState(false);
   const [wordBump, setWordBump] = useState(0);
   const [autoAdvance, setAutoAdvance] = useState(true);
-  const [voiceOut, setVoiceOut] = useState(false);
+  const [voiceOut, setVoiceOut] = useState(true);
+  const [piperVoiceId, setPiperVoiceId] = useState(DEFAULT_PIPER_VOICE);
+  const [piperFailed, setPiperFailed] = useState(false);
+  const [voiceLoading, setVoiceLoading] = useState(false);
   const sentenceModeRef = useRef(false);
   const autoAdvanceCancelRef = useRef<(() => void) | null>(null);
 
@@ -84,6 +93,8 @@ export function DuelView({
     if (stored !== null) setAutoAdvance(stored === "true");
     const voiceStored = localStorage.getItem(VOICE_OUT_KEY);
     if (voiceStored !== null) setVoiceOut(voiceStored === "true");
+    const uriStored = localStorage.getItem(PIPER_VOICE_KEY);
+    if (uriStored) setPiperVoiceId(uriStored);
   }, []);
 
   const handleVoiceOutChange = (enabled: boolean) => {
@@ -95,6 +106,16 @@ export function DuelView({
     setAutoAdvance(enabled);
     localStorage.setItem(AUTO_ADVANCE_KEY, String(enabled));
   };
+
+  const [fallbackPrefix, setFallbackPrefix] = useState("");
+  const [fallbackSentence, setFallbackSentence] = useState("");
+  const [fallbackVoiceComplete, setFallbackVoiceComplete] = useState(false);
+
+  useEffect(() => {
+    if (voiceOut && !piperFailed) {
+      void import("@/lib/piper").then((m) => m.resetPiperSession());
+    }
+  }, [piperVoiceId, voiceOut, piperFailed]);
 
   const scenes: Scene[] = useMemo(
     () => [
@@ -131,23 +152,160 @@ export function DuelView({
     setWordBump((n) => n + 1);
   }, []);
 
-  const { displayed, isComplete: typingComplete, skipToEnd, advanceSentence } = useTyping({
+  const handleNarrationComplete = useCallback(() => {
+    if (isQuestionScene) {
+      setTimeout(() => {
+        setQuestionAnchored(true);
+        setTimeout(() => setStageReady(true), 350);
+      }, 500);
+    }
+    setWaitingForUser(true);
+  }, [isQuestionScene]);
+
+  const usePiperNarration = voiceOut && !piperFailed;
+  const useFallbackVoice = voiceOut && piperFailed;
+
+  const narrationEnabled =
+    usePiperNarration &&
+    !isQuestionScene &&
+    !isJudgeIntro &&
+    !!currentText &&
+    ((currentScene?.type === "exchange" && stageReady) || isVerdictScene);
+
+  const typingEnabled =
+    (!usePiperNarration && !useFallbackVoice || isQuestionScene) &&
+    !isJudgeIntro &&
+    !!currentText;
+
+  const fallbackTypingEnabled =
+    useFallbackVoice &&
+    !isQuestionScene &&
+    !isJudgeIntro &&
+    !!fallbackSentence &&
+    ((currentScene?.type === "exchange" && stageReady) || isVerdictScene);
+
+  const { displayed: typedDisplayed, isComplete: typedComplete, skipToEnd: typedSkip, advanceSentence } = useTyping({
     text: currentText,
     wpm: isQuestionScene ? 90 : wpm,
-    enabled: !isJudgeIntro && !!currentText,
+    enabled: typingEnabled,
     mode: isQuestionScene ? "letter" : "word",
-    pauseBetweenSentences: modeConfig.pauseBetweenSentences,
+    pauseBetweenSentences: voiceOut ? 80 : modeConfig.pauseBetweenSentences,
     onWordTick: handleWordTick,
-    onComplete: () => {
-      if (isQuestionScene) {
-        setTimeout(() => {
-          setQuestionAnchored(true);
-          setTimeout(() => setStageReady(true), 350);
-        }, 500);
-      }
-      setWaitingForUser(true);
-    },
+    onComplete: handleNarrationComplete,
   });
+
+  const {
+    displayed: fallbackSentenceDisplayed,
+    isComplete: fallbackSentenceComplete,
+    skipToEnd: fallbackSentenceSkip,
+  } = useTyping({
+    text: fallbackSentence,
+    wpm,
+    enabled: fallbackTypingEnabled,
+    mode: "word",
+    pauseBetweenSentences: 0,
+    onWordTick: handleWordTick,
+  });
+
+  const handleFallbackSentenceStart = useCallback(
+    (_index: number, sentence: string, prefix: string) => {
+      setFallbackPrefix(prefix);
+      setFallbackSentence(sentence);
+      setFallbackVoiceComplete(false);
+    },
+    []
+  );
+
+  const handleFallbackSentenceEnd = useCallback((_index: number, sentence: string) => {
+    setFallbackPrefix((prev) => prev + sentence);
+    setFallbackSentence("");
+  }, []);
+
+  const handleFallbackVoiceComplete = useCallback(() => {
+    setFallbackPrefix(currentText);
+    setFallbackSentence("");
+    setFallbackVoiceComplete(true);
+    handleNarrationComplete();
+  }, [currentText, handleNarrationComplete]);
+
+  useEffect(() => {
+    setFallbackPrefix("");
+    setFallbackSentence("");
+    setFallbackVoiceComplete(false);
+  }, [sceneIndex]);
+
+  const {
+    displayed: syncedDisplayed,
+    isComplete: syncedComplete,
+    skipToEnd: syncedSkip,
+  } = useSyncedNarration({
+    text: currentText,
+    wpm,
+    enabled: narrationEnabled,
+    voiceId: piperVoiceId,
+    sceneKey: sceneIndex,
+    onWordTick: handleWordTick,
+    onComplete: handleNarrationComplete,
+    onLoadingChange: setVoiceLoading,
+    onPiperError: () => setPiperFailed(true),
+  });
+
+  const { cancel: cancelFallbackVoice } = useVoiceOut({
+    enabled:
+      useFallbackVoice &&
+      stageReady &&
+      !isQuestionScene &&
+      !isJudgeIntro &&
+      !!currentText,
+    fullText: currentText,
+    sceneKey: sceneIndex,
+    wpm,
+    onSentenceStart: handleFallbackSentenceStart,
+    onSentenceEnd: handleFallbackSentenceEnd,
+    onQueueComplete: handleFallbackVoiceComplete,
+  });
+
+  const fallbackDisplayed = fallbackPrefix + fallbackSentenceDisplayed;
+  const fallbackComplete =
+    fallbackVoiceComplete && (!fallbackSentence || fallbackSentenceComplete);
+
+  const displayed = usePiperNarration && !isQuestionScene
+    ? syncedDisplayed
+    : useFallbackVoice && !isQuestionScene
+      ? fallbackDisplayed
+      : typedDisplayed;
+  const typingComplete = usePiperNarration && !isQuestionScene
+    ? syncedComplete
+    : useFallbackVoice && !isQuestionScene
+      ? fallbackComplete
+      : typedComplete;
+
+  const skipToEnd = useCallback(() => {
+    if (usePiperNarration && !isQuestionScene) {
+      syncedSkip();
+      return;
+    }
+    if (useFallbackVoice && !isQuestionScene) {
+      cancelFallbackVoice();
+      fallbackSentenceSkip();
+      setFallbackPrefix(currentText);
+      setFallbackSentence("");
+      setFallbackVoiceComplete(true);
+      handleNarrationComplete();
+      return;
+    }
+    typedSkip();
+  }, [
+    usePiperNarration,
+    useFallbackVoice,
+    isQuestionScene,
+    syncedSkip,
+    cancelFallbackVoice,
+    fallbackSentenceSkip,
+    currentText,
+    handleNarrationComplete,
+    typedSkip,
+  ]);
 
   const currentExchange =
     currentScene?.type === "exchange" ? exchanges[currentScene.index] : null;
@@ -261,12 +419,20 @@ export function DuelView({
     advanceSentence,
   ]);
 
+  const awaitingVerdict =
+    waitingForUser &&
+    typingComplete &&
+    !!verdict &&
+    scenes[sceneIndex + 1]?.type === "judge-intro";
+
+  const canAdvanceForAuto = canAdvance && !awaitingVerdict;
+
   const { cancel: cancelAutoAdvance } = useAutoAdvance({
     enabled: autoAdvance,
     typingComplete,
     waitingForUser,
     transitionSpeed: modeConfig.transitionSpeed,
-    canAdvance,
+    canAdvance: canAdvanceForAuto,
     onAdvance: advance,
   });
   autoAdvanceCancelRef.current = cancelAutoAdvance;
@@ -319,50 +485,12 @@ export function DuelView({
     }
   }, [isJudgeIntro, sceneIndex]);
 
-  const verdictSentences = useMemo(
-    () => verdict?.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [],
-    [verdict]
-  );
-  const [verdictSentenceIdx, setVerdictSentenceIdx] = useState(0);
-
-  useEffect(() => {
-    if (isVerdictScene) {
-      setVerdictSentenceIdx(0);
-      const interval = setInterval(() => {
-        setVerdictSentenceIdx((i) => {
-          if (i >= verdictSentences.length - 1) {
-            clearInterval(interval);
-            setWaitingForUser(true);
-            return i;
-          }
-          return i + 1;
-        });
-      }, 650);
-      return () => clearInterval(interval);
-    }
-  }, [isVerdictScene, verdictSentences.length]);
-
   const activeTimelineIndex =
     currentScene?.type === "exchange"
       ? currentScene.index
       : currentScene?.type === "verdict" || currentScene?.type === "judge-intro"
         ? 8
         : -1;
-
-  const voiceText = isVerdictScene
-    ? verdictSentences.slice(0, verdictSentenceIdx + 1).join(" ")
-    : displayed;
-
-  const voiceTypingComplete = isVerdictScene
-    ? verdictSentenceIdx >= verdictSentences.length - 1
-    : typingComplete;
-
-  useVoiceOut({
-    enabled: voiceOut && stageReady && !isQuestionScene && !isJudgeIntro,
-    text: voiceText,
-    sceneKey: sceneIndex,
-    typingComplete: voiceTypingComplete,
-  });
 
   const statusAgent =
     isVerdictScene || isJudgeIntro ? AGENTS.judge : currentAgent ?? null;
@@ -401,11 +529,18 @@ export function DuelView({
         />
       )}
 
+      <VoiceLoadingToast visible={voiceLoading && voiceOut && !piperFailed} />
+
       <div className="flex flex-col gap-2 px-4 py-3 md:flex-row md:items-center md:justify-between md:px-6 md:py-4">
         <div className="flex items-center justify-center gap-2 md:justify-start">
           <ThemeToggle theme={theme} onToggle={onThemeToggle} />
           <AutoAdvanceToggle enabled={autoAdvance} onChange={handleAutoAdvanceChange} />
           <VoiceToggle enabled={voiceOut} onChange={handleVoiceOutChange} />
+          <VoicePicker
+            enabled={voiceOut && !piperFailed}
+            voiceId={piperVoiceId}
+            onChange={setPiperVoiceId}
+          />
         </div>
         <div className="flex items-center justify-center gap-3">
           <NewQuestionPill onClick={onNewQuestion} />
@@ -417,7 +552,7 @@ export function DuelView({
           </span>
           <SpeedSlider
             value={wpm}
-            modeDefault={modeConfig.typingSpeed}
+            modeDefault={DEFAULT_WPM}
             onChange={setWpm}
           />
         </div>
@@ -496,28 +631,35 @@ export function DuelView({
         )}
 
         {isVerdictScene && (
-          <div className="flex flex-1 flex-col items-center justify-center px-8">
-            <div className="mb-6 text-5xl">{AGENTS.judge.icon}</div>
+          <div className="relative flex flex-1 flex-col items-center justify-center px-8">
+            <SentimentPulse
+              sentiment={0}
+              theme={theme}
+              wordBump={wordBump}
+              isSpeaking={!typingComplete}
+              agentColor={AGENTS.judge.color}
+            />
+            <div className="relative z-10 mb-6 text-5xl">{AGENTS.judge.icon}</div>
             <h3
-              className="mb-6 font-inter text-sm font-semibold"
+              className="relative z-10 mb-6 font-inter text-sm font-semibold"
               style={{ color: AGENTS.judge.color }}
             >
               {AGENTS.judge.name}
             </h3>
-            <div className="max-w-2xl space-y-4">
-              {verdictSentences.slice(0, verdictSentenceIdx + 1).map((sentence, i) => (
+            <div className="relative z-10 max-w-2xl space-y-4">
+              {(displayed.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [displayed]).map((sentence, i, arr) => (
                 <motion.p
                   key={i}
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.4 }}
                   className={`font-inter leading-relaxed text-debate-text ${
-                    i === verdictSentences.length - 1
+                    i === arr.length - 1
                       ? "text-center font-playfair text-[22px] italic text-ink"
-                      : "text-[15px]"
+                      : "debate-body text-[15px] font-normal"
                   }`}
                   style={
-                    i === verdictSentences.length - 1 ? getVerdictGlowStyle() : undefined
+                    i === arr.length - 1 ? getVerdictGlowStyle() : undefined
                   }
                 >
                   {sentence.trim()}
@@ -563,6 +705,8 @@ export function DuelView({
             />
           )}
       </div>
+
+      {awaitingVerdict && <VerdictCTA onClick={advance} />}
 
       {(exchanges.length > 0 || isComplete) && (
         <Timeline
