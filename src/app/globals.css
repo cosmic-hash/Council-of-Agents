@@ -3,8 +3,23 @@
 @tailwind utilities;
 
 :root {
+  --background: #fafaf8;
+  --foreground: #1c1917;
+  --foreground-muted: #78716c;
+  --surface: #ffffff;
+  --surface-border: #e7e5e4;
+  --debate-text: #44403c;
+  --accent-violet: #7c3aed;
+}
+
+.dark {
   --background: #0a0a0f;
   --foreground: #f0ead6;
+  --foreground-muted: #a8a29e;
+  --surface: #14141c;
+  --surface-border: #2a2a35;
+  --debate-text: #d6d3d1;
+  --accent-violet: #a78bfa;
 }
 
 html,
@@ -30,10 +45,10 @@ body {
     opacity: 0;
   }
   10% {
-    opacity: 0.15;
+    opacity: 0.35;
   }
   90% {
-    opacity: 0.15;
+    opacity: 0.40;
   }
   100% {
     transform: translateY(-10vh) translateX(20px);
@@ -47,7 +62,7 @@ body {
     opacity: 0.6;
   }
   50% {
-    opacity: 1;
+    opacity: 0.9;
   }
 }
 
@@ -75,10 +90,10 @@ body {
 @keyframes tension-pulse {
   0%,
   100% {
-    opacity: 0.4;
+    opacity: 0.3;
   }
   50% {
-    opacity: 1;
+    opacity: 0.8;
   }
 }
 
@@ -88,6 +103,7 @@ body {
 
 .speaking-bar {
   animation: speaking-bar 0.8s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px currentColor);
 }
 
 .breathing-glow {
@@ -100,4 +116,20 @@ body {
 
 .spark-particle {
   animation: spark-travel 1.2s linear infinite;
+}
+
+@keyframes sentiment-heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.95;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+
+.sentiment-pulse {
+  animation: sentiment-heartbeat ease-in-out infinite;
 }

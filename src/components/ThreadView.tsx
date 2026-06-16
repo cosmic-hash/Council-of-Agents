@@ -1,8 +1,8 @@
 "use client";
 
 import { AGENTS } from "@/lib/constants";
-import type { DebateMessage } from "@/lib/types";
 import { getTensionMeterColor } from "@/lib/heat";
+import type { DebateMessage } from "@/lib/types";
 
 interface ThreadViewProps {
   messages: DebateMessage[];
@@ -17,8 +17,8 @@ export function ThreadView({ messages, verdict, heatLevel, question }: ThreadVie
   return (
     <div className="relative flex h-full flex-col">
       <div className="absolute right-4 top-4 flex flex-col items-center gap-1">
-        <span className="font-mono text-[10px] text-gray-600">tension</span>
-        <div className="h-24 w-1 overflow-hidden rounded-full bg-white/5">
+        <span className="font-mono text-[10px] text-foreground-muted">tension</span>
+        <div className="h-24 w-1 overflow-hidden rounded-full bg-surface-border">
           <div
             className="w-full rounded-full transition-all duration-1000 ease-out"
             style={{
@@ -31,9 +31,9 @@ export function ThreadView({ messages, verdict, heatLevel, question }: ThreadVie
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-8">
-        <div className="mx-auto max-w-2xl space-y-6">
-          <div className="border-l-2 border-violet-500/30 pl-4">
-            <p className="font-playfair text-lg text-cream-muted">{question}</p>
+        <div className="mx-auto max-w-2xl space-y-6 rounded-xl bg-surface/80 p-6 backdrop-blur-sm">
+          <div className="border-l-2 border-violet-300 pl-4 dark:border-violet-600">
+            <p className="font-playfair text-lg text-foreground-muted">{question}</p>
           </div>
 
           {messages.map((msg, i) => {
@@ -51,7 +51,7 @@ export function ThreadView({ messages, verdict, heatLevel, question }: ThreadVie
                   >
                     {agent.name}
                   </span>
-                  <span className="rounded bg-violet-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-violet-400">
+                  <span className="rounded bg-violet-50 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-violet-600 dark:bg-violet-950/50 dark:text-violet-300">
                     {msg.phase}
                   </span>
                 </div>
@@ -71,7 +71,7 @@ export function ThreadView({ messages, verdict, heatLevel, question }: ThreadVie
                 >
                   {AGENTS.judge.name}
                 </span>
-                <span className="rounded bg-violet-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-violet-400">
+                <span className="rounded bg-violet-50 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-violet-600">
                   verdict
                 </span>
               </div>

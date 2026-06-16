@@ -2,15 +2,24 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AGENTS, MODES } from "@/lib/constants";
-import type { DebateMode, Exchange, ViewMode } from "@/lib/types";
+import { AGENTS, AUTO_ADVANCE_KEY, MODES } from "@/lib/constants";
+import type { AgentId, DebateMode, DebatePhase, Exchange, ViewMode } from "@/lib/types";
 import { agentMentionsOther } from "@/lib/heat";
+import { parseSentiment } from "@/lib/prompts";
 import { useTyping } from "@/hooks/useTyping";
-import { SpeakingBars } from "./SpeakingBars";
-import { TensionWire } from "./TensionWire";
+import { useAutoAdvance } from "@/hooks/useAutoAdvance";
+import type { Theme } from "@/hooks/useTheme";
 import { Timeline } from "./Timeline";
 import { SpeedSlider } from "./SpeedSlider";
+import { getVerdictGlowStyle } from "@/lib/theme";
+import { getModeStageFilter } from "@/lib/visuals";
+import { NewQuestionPill } from "./NewQuestionPill";
 import { ViewToggle } from "./ViewToggle";
+import { ThemeToggle } from "./ThemeToggle";
+import { AutoAdvanceToggle } from "./AutoAdvanceToggle";
+import { CouncilRoster } from "./CouncilRoster";
+import { CenteredStage } from "./stages/CenteredStage";
+import { SplitStage } from "./stages/SplitStage";
 
 interface DuelViewProps {
   question: string;
@@ -20,6 +29,8 @@ interface DuelViewProps {
   isStreaming: boolean;
   isComplete: boolean;
   view: ViewMode;
+  theme: Theme;
+  onThemeToggle: () => void;
   onViewChange: (view: ViewMode) => void;
   onReplay: () => void;
   onNewQuestion: () => void;
@@ -41,6 +52,8 @@ export function DuelView({
   isStreaming,
   isComplete,
   view,
+  theme,
+  onThemeToggle,
   onViewChange,
   onReplay,
   onNewQuestion,
@@ -51,13 +64,26 @@ export function DuelView({
   const [wpm, setWpm] = useState(modeConfig.typingSpeed);
   const [sceneIndex, setSceneIndex] = useState(0);
   const [questionAnchored, setQuestionAnchored] = useState(false);
-  const [stageSplit, setStageSplit] = useState(false);
+  const [stageReady, setStageReady] = useState(false);
   const [waitingForUser, setWaitingForUser] = useState(false);
   const [showEndActions, setShowEndActions] = useState(false);
   const [leftPulse, setLeftPulse] = useState(false);
   const [edgeFlash, setEdgeFlash] = useState<string | null>(null);
   const [energyBeam, setEnergyBeam] = useState(false);
+  const [wordBump, setWordBump] = useState(0);
+  const [autoAdvance, setAutoAdvance] = useState(true);
   const sentenceModeRef = useRef(false);
+  const autoAdvanceCancelRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(AUTO_ADVANCE_KEY);
+    if (stored !== null) setAutoAdvance(stored === "true");
+  }, []);
+
+  const handleAutoAdvanceChange = (enabled: boolean) => {
+    setAutoAdvance(enabled);
+    localStorage.setItem(AUTO_ADVANCE_KEY, String(enabled));
+  };
 
   const scenes: Scene[] = useMemo(
     () => [
@@ -75,6 +101,7 @@ export function DuelView({
   const isOpening =
     currentScene?.type === "exchange" &&
     exchanges[currentScene.index]?.phase === "opening";
+  const layoutMode = isRebuttal ? "split" : "centered";
 
   const getCurrentText = useCallback(() => {
     if (!currentScene) return "";
@@ -89,20 +116,23 @@ export function DuelView({
   const isJudgeIntro = currentScene?.type === "judge-intro";
   const isVerdictScene = currentScene?.type === "verdict";
 
-  const typingMode = isQuestionScene ? "letter" : "word";
+  const handleWordTick = useCallback(() => {
+    setWordBump((n) => n + 1);
+  }, []);
 
   const { displayed, isComplete: typingComplete, skipToEnd, advanceSentence } = useTyping({
     text: currentText,
-    wpm: isQuestionScene ? 40 : wpm,
+    wpm: isQuestionScene ? 90 : wpm,
     enabled: !isJudgeIntro && !!currentText,
-    mode: typingMode,
+    mode: isQuestionScene ? "letter" : "word",
     pauseBetweenSentences: modeConfig.pauseBetweenSentences,
+    onWordTick: handleWordTick,
     onComplete: () => {
       if (isQuestionScene) {
         setTimeout(() => {
           setQuestionAnchored(true);
-          setTimeout(() => setStageSplit(true), 600);
-        }, 1200);
+          setTimeout(() => setStageReady(true), 350);
+        }, 500);
       }
       setWaitingForUser(true);
     },
@@ -116,6 +146,41 @@ export function DuelView({
       ? exchanges[currentScene.index - 1]
       : null;
   const prevAgent = prevExchange ? AGENTS[prevExchange.agentId] : null;
+
+  const sentiment = useMemo(() => {
+    if (currentExchange?.sentiment !== undefined) return currentExchange.sentiment;
+    if (displayed) return parseSentiment(displayed).sentiment;
+    return 0;
+  }, [currentExchange, displayed]);
+
+  const spokenAgentIds = useMemo(() => {
+    const ids = new Set<AgentId>();
+    for (let i = 0; i < sceneIndex; i++) {
+      const scene = scenes[i];
+      if (scene?.type === "exchange") {
+        ids.add(exchanges[scene.index].agentId);
+      }
+    }
+    if (currentExchange && typingComplete) ids.add(currentExchange.agentId);
+    return Array.from(ids);
+  }, [sceneIndex, scenes, exchanges, currentExchange, typingComplete]);
+
+  const upcomingAgentId = useMemo((): AgentId | null => {
+    const nextScene = scenes[sceneIndex + 1];
+    if (nextScene?.type === "exchange") return exchanges[nextScene.index].agentId;
+    if (nextScene?.type === "judge-intro" || nextScene?.type === "verdict") return "judge";
+    if (isStreaming && exchanges.length > sceneIndex) {
+      const nextIdx = currentScene?.type === "exchange" ? currentScene.index + 1 : 0;
+      if (nextIdx < exchanges.length) return exchanges[nextIdx].agentId;
+    }
+    return null;
+  }, [scenes, sceneIndex, exchanges, isStreaming, currentScene]);
+
+  const rosterPhase: DebatePhase | "question" | null = isVerdictScene || isJudgeIntro
+    ? "verdict"
+    : isQuestionScene
+      ? "question"
+      : currentExchange?.phase ?? null;
 
   useEffect(() => {
     if (isRebuttal && currentExchange && prevAgent) {
@@ -145,7 +210,21 @@ export function DuelView({
     }
   }, [isComplete, typingComplete, isVerdictScene]);
 
+  const canAdvance = useMemo(() => {
+    if (sceneIndex >= scenes.length - 1) return false;
+    const next = scenes[sceneIndex + 1];
+    if (next?.type === "exchange") {
+      return !!exchanges[next.index]?.content;
+    }
+    if (next?.type === "judge-intro" || next?.type === "verdict") {
+      return !!verdict;
+    }
+    return true;
+  }, [sceneIndex, scenes, exchanges, verdict]);
+
   const advance = useCallback(() => {
+    autoAdvanceCancelRef.current?.();
+
     if (!waitingForUser && !typingComplete && !isJudgeIntro) {
       skipToEnd();
       return;
@@ -156,14 +235,30 @@ export function DuelView({
       return;
     }
 
-    if (sceneIndex < scenes.length - 1) {
+    if (sceneIndex < scenes.length - 1 && canAdvance) {
       setSceneIndex((i) => i + 1);
       setWaitingForUser(false);
-      if (scenes[sceneIndex + 1]?.type === "exchange" || scenes[sceneIndex + 1]?.type === "verdict") {
-        // ready for typing
-      }
     }
-  }, [waitingForUser, typingComplete, isJudgeIntro, sceneIndex, scenes, skipToEnd, advanceSentence]);
+  }, [
+    waitingForUser,
+    typingComplete,
+    isJudgeIntro,
+    sceneIndex,
+    scenes.length,
+    canAdvance,
+    skipToEnd,
+    advanceSentence,
+  ]);
+
+  const { cancel: cancelAutoAdvance } = useAutoAdvance({
+    enabled: autoAdvance,
+    typingComplete,
+    waitingForUser,
+    transitionSpeed: modeConfig.transitionSpeed,
+    canAdvance,
+    onAdvance: advance,
+  });
+  autoAdvanceCancelRef.current = cancelAutoAdvance;
 
   const goToExchange = useCallback(
     (index: number) => {
@@ -197,55 +292,18 @@ export function DuelView({
   }, [view, advance, sceneIndex]);
 
   useEffect(() => {
-    if (isStreaming && exchanges.length > 0) {
-      const lastExchange = exchanges[exchanges.length - 1];
-      const targetScene = exchanges.length;
-      if (sceneIndex < targetScene && currentScene?.type !== "question") {
-        // auto-move to latest exchange when streaming
-      }
-    }
-  }, [exchanges, isStreaming, sceneIndex, currentScene]);
-
-  useEffect(() => {
-    if (!isStreaming && exchanges.length > 0 && sceneIndex === 0 && questionAnchored) {
-      setSceneIndex(1);
-    }
-  }, [isStreaming, exchanges.length, sceneIndex, questionAnchored]);
-
-  useEffect(() => {
-    const latestIdx = exchanges.length;
-    if (isStreaming && latestIdx > 0) {
-      const expectedScene = latestIdx;
-      if (sceneIndex < expectedScene && waitingForUser) {
-        // wait for user
-      } else if (sceneIndex < expectedScene && !waitingForUser) {
-        // stay on current until user advances or typing completes
-      }
-    }
-  }, [exchanges.length, isStreaming, sceneIndex, waitingForUser]);
-
-  useEffect(() => {
-    if (exchanges.length > 0 && sceneIndex === 0 && stageSplit) {
+    if (exchanges.length > 0 && sceneIndex === 0 && stageReady) {
       setSceneIndex(1);
       setWaitingForUser(false);
     }
-  }, [exchanges.length, sceneIndex, stageSplit]);
-
-  useEffect(() => {
-    if (verdict && !isVerdictScene) {
-      const judgeIntroIdx = scenes.findIndex((s) => s.type === "judge-intro");
-      if (judgeIntroIdx >= 0 && sceneIndex === judgeIntroIdx - 1 && waitingForUser) {
-        // user can advance to judge
-      }
-    }
-  }, [verdict, isVerdictScene, scenes, sceneIndex, waitingForUser]);
+  }, [exchanges.length, sceneIndex, stageReady]);
 
   useEffect(() => {
     if (isJudgeIntro) {
       const t = setTimeout(() => {
         setSceneIndex((i) => i + 1);
         setWaitingForUser(false);
-      }, 2400);
+      }, 1600);
       return () => clearTimeout(t);
     }
   }, [isJudgeIntro, sceneIndex]);
@@ -255,14 +313,6 @@ export function DuelView({
     [verdict]
   );
   const [verdictSentenceIdx, setVerdictSentenceIdx] = useState(0);
-
-  useEffect(() => {
-    if (isVerdictScene && verdictSentences.length > 0) {
-      if (verdictSentenceIdx < verdictSentences.length - 1 && waitingForUser) {
-        // wait
-      }
-    }
-  }, [isVerdictScene, verdictSentences, verdictSentenceIdx, waitingForUser]);
 
   useEffect(() => {
     if (isVerdictScene) {
@@ -276,7 +326,7 @@ export function DuelView({
           }
           return i + 1;
         });
-      }, 1200);
+      }, 650);
       return () => clearInterval(interval);
     }
   }, [isVerdictScene, verdictSentences.length]);
@@ -295,16 +345,22 @@ export function DuelView({
           className="pointer-events-none fixed inset-0 z-50 transition-opacity duration-150"
           style={{
             boxShadow: `inset 0 0 60px ${edgeFlash}66`,
-            opacity: 0.4,
+            opacity: 0.25,
           }}
         />
       )}
 
       <div className="flex items-center justify-between px-6 py-4">
-        <div />
-        <ViewToggle view={view} onChange={onViewChange} />
+        <div className="flex items-center gap-2">
+          <ThemeToggle theme={theme} onToggle={onThemeToggle} />
+          <AutoAdvanceToggle enabled={autoAdvance} onChange={handleAutoAdvanceChange} />
+        </div>
+        <div className="flex items-center gap-3">
+          <NewQuestionPill onClick={onNewQuestion} />
+          <ViewToggle view={view} onChange={onViewChange} />
+        </div>
         <div className="flex items-center gap-4">
-          <span className="font-mono text-[10px] text-gray-600">
+          <span className="font-mono text-[10px] text-foreground-muted">
             {modeConfig.icon} {modeConfig.label}
           </span>
           <SpeedSlider
@@ -315,23 +371,40 @@ export function DuelView({
         </div>
       </div>
 
+      {stageReady && (
+        <CouncilRoster
+          activeAgentId={
+            isVerdictScene || isJudgeIntro
+              ? "judge"
+              : currentExchange?.agentId ?? null
+          }
+          spokenAgentIds={spokenAgentIds}
+          upcomingAgentId={upcomingAgentId}
+          phase={rosterPhase}
+          isVerdictPhase={isVerdictScene || isJudgeIntro}
+        />
+      )}
+
       {questionAnchored && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="border-b border-white/5 px-6 py-3 text-center"
+          className="border-b border-surface-border px-6 py-3 text-center"
         >
-          <p className="font-playfair text-lg text-cream-muted">{question}</p>
+          <p className="font-playfair text-lg text-foreground-muted">{question}</p>
         </motion.div>
       )}
 
-      <div className="relative flex flex-1 flex-col">
+      <div
+        className="relative flex flex-1 flex-col"
+        style={{ filter: getModeStageFilter(mode) }}
+      >
         {isQuestionScene && !questionAnchored && (
-          <div className="flex flex-1 items-center justify-center px-8">
-            <p className="max-w-2xl text-center font-playfair text-4xl italic text-cream">
+          <div className="relative flex flex-1 items-center justify-center px-8">
+            <p className="max-w-2xl text-center font-playfair text-4xl italic text-ink">
               {displayed}
               {!typingComplete && (
-                <span className="ml-0.5 inline-block h-8 w-0.5 animate-pulse bg-cream" />
+                <span className="ml-0.5 inline-block h-8 w-0.5 animate-pulse bg-ink" />
               )}
             </p>
           </div>
@@ -347,7 +420,7 @@ export function DuelView({
             >
               <div
                 className="absolute inset-0 rounded-full blur-3xl"
-                style={{ backgroundColor: `${AGENTS.judge.color}30` }}
+                style={{ backgroundColor: `${AGENTS.judge.color}55` }}
               />
               <span className="relative text-7xl">{AGENTS.judge.icon}</span>
             </motion.div>
@@ -355,7 +428,7 @@ export function DuelView({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 1 }}
-              className="mt-8 font-playfair text-lg italic text-gray-500"
+              className="mt-8 font-playfair text-lg italic text-foreground-muted"
             >
               The council has been heard.
             </motion.p>
@@ -380,13 +453,11 @@ export function DuelView({
                   transition={{ duration: 0.4 }}
                   className={`font-inter leading-relaxed text-debate-text ${
                     i === verdictSentences.length - 1
-                      ? "text-center font-playfair text-[22px] italic text-cream"
+                      ? "text-center font-playfair text-[22px] italic text-ink"
                       : "text-[15px]"
                   }`}
                   style={
-                    i === verdictSentences.length - 1
-                      ? { textShadow: "0 4px 20px rgba(245, 158, 11, 0.3)" }
-                      : undefined
+                    i === verdictSentences.length - 1 ? getVerdictGlowStyle() : undefined
                   }
                 >
                   {sentence.trim()}
@@ -396,110 +467,40 @@ export function DuelView({
           </div>
         )}
 
-        {currentScene?.type === "exchange" && stageSplit && (
-          <div className="relative flex flex-1">
-            <TensionWire mode={mode} visible={isRebuttal} />
-
-            <motion.div
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: "50%", opacity: isRebuttal ? 0.7 : 0.5 }}
-              transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-              className={`relative flex flex-col items-center justify-center border-r border-white/5 px-6 ${
-                leftPulse ? "animate-pulse" : ""
-              }`}
-              style={leftPulse && prevAgent ? { backgroundColor: `${prevAgent.color}10` } : undefined}
-            >
-              {isRebuttal && prevAgent ? (
-                <>
-                  <div
-                    className="mb-3 flex h-12 w-12 items-center justify-center rounded-full text-2xl"
-                    style={{ boxShadow: `0 0 20px ${prevAgent.color}30` }}
-                  >
-                    {prevAgent.icon}
-                  </div>
-                  <span
-                    className="font-inter text-sm font-semibold opacity-60"
-                    style={{ color: prevAgent.color }}
-                  >
-                    {prevAgent.name}
-                  </span>
-                  <p className="mt-4 max-w-xs text-center font-inter text-sm font-light text-gray-500">
-                    {prevExchange?.content}
-                  </p>
-                </>
-              ) : (
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-                  className="h-24 w-24 rounded-full"
-                  style={{
-                    background:
-                      "radial-gradient(circle, rgba(124,58,237,0.3) 0%, rgba(240,234,214,0.1) 50%, transparent 70%)",
-                    boxShadow: "0 0 40px rgba(124, 58, 237, 0.2)",
-                  }}
-                />
-              )}
-            </motion.div>
-
-            <motion.div
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: "50%", opacity: 1 }}
-              transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
-              className="relative flex flex-col items-center justify-center px-6"
-            >
-              {energyBeam && (
-                <motion.div
-                  initial={{ width: 0, opacity: 0.8 }}
-                  animate={{ width: "100%", opacity: 0 }}
-                  transition={{ duration: 0.6 }}
-                  className="absolute left-0 top-1/2 h-px -translate-y-1/2"
-                  style={{
-                    background: "linear-gradient(90deg, rgba(124,58,237,0.6), transparent)",
-                  }}
-                />
-              )}
-
-              {currentAgent && (
-                <>
-                  <SpeakingBars color={currentAgent.color} active={!typingComplete} />
-                  <div
-                    className="mb-3 flex h-16 w-16 items-center justify-center text-4xl"
-                    style={{ filter: `drop-shadow(0 0 12px ${currentAgent.color}40)` }}
-                  >
-                    {currentAgent.icon}
-                  </div>
-                  <span
-                    className="font-inter text-sm font-semibold"
-                    style={{ color: currentAgent.color }}
-                  >
-                    {currentAgent.name}
-                  </span>
-                  <span className="font-mono text-[11px] text-gray-500">
-                    {currentAgent.role}
-                  </span>
-                  <p className="mt-6 max-w-sm text-center font-inter text-[15px] font-light leading-relaxed text-debate-text">
-                    {displayed}
-                    {!typingComplete && (
-                      <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-debate-text" />
-                    )}
-                  </p>
-                </>
-              )}
-            </motion.div>
-          </div>
+        {currentScene?.type === "exchange" && stageReady && layoutMode === "centered" && currentAgent && (
+          <CenteredStage
+            agent={currentAgent}
+            displayed={displayed}
+            typingComplete={typingComplete}
+            sentiment={sentiment}
+            theme={theme}
+            wordBump={wordBump}
+            energyBeam={energyBeam && isOpening}
+            showQuestionOrb={isOpening}
+            role={currentAgent.role}
+          />
         )}
 
-        {(waitingForUser || typingComplete) &&
-          !isJudgeIntro &&
-          !isVerdictScene &&
-          currentScene?.type === "exchange" && (
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="absolute bottom-24 left-0 right-0 text-center font-mono text-[11px] text-gray-700"
-            >
-              Press Space to continue
-            </motion.p>
+        {currentScene?.type === "exchange" &&
+          stageReady &&
+          layoutMode === "split" &&
+          currentAgent &&
+          prevAgent &&
+          prevExchange && (
+            <SplitStage
+              currentAgent={currentAgent}
+              prevAgent={prevAgent}
+              prevExchange={prevExchange}
+              displayed={displayed}
+              typingComplete={typingComplete}
+              sentiment={sentiment}
+              theme={theme}
+              wordBump={wordBump}
+              mode={mode}
+              heatLevel={heatLevel}
+              leftPulse={leftPulse}
+              energyBeam={false}
+            />
           )}
       </div>
 
@@ -508,6 +509,9 @@ export function DuelView({
           activeIndex={activeTimelineIndex}
           onDotClick={goToExchange}
           isComplete={isComplete}
+          isStreaming={isStreaming}
+          heatLevel={heatLevel}
+          autoAdvance={autoAdvance}
         />
       )}
 
@@ -520,19 +524,19 @@ export function DuelView({
           >
             <button
               onClick={onReplay}
-              className="font-mono text-[11px] text-gray-500 hover:text-cream"
+              className="font-mono text-[11px] text-foreground-muted hover:text-foreground"
             >
               Replay
             </button>
             <button
               onClick={onSwitchToThread}
-              className="font-mono text-[11px] text-gray-500 hover:text-cream"
+              className="font-mono text-[11px] text-foreground-muted hover:text-foreground"
             >
               Switch to Thread
             </button>
             <button
               onClick={onNewQuestion}
-              className="font-mono text-[11px] text-gray-500 hover:text-cream"
+              className="font-mono text-[11px] text-foreground-muted hover:text-foreground"
             >
               New question
             </button>
@@ -543,7 +547,7 @@ export function DuelView({
       {isComplete && (
         <button
           onClick={onReplay}
-          className="absolute right-6 top-16 font-mono text-[10px] text-gray-600 hover:text-gray-400"
+          className="absolute right-6 top-16 font-mono text-[10px] text-foreground-muted hover:text-foreground"
         >
           ⟳ Replay from start
         </button>

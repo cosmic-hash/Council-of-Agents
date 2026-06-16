@@ -23,7 +23,7 @@ export function UserContextInput({ value, onChange }: UserContextInputProps) {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="font-mono text-[11px] text-gray-500 transition-colors hover:text-gray-400"
+        className="font-mono text-[11px] text-foreground-muted transition-colors hover:text-foreground"
       >
         {isOpen ? "▼" : "▶"} About You (optional)
       </button>
@@ -40,9 +40,9 @@ export function UserContextInput({ value, onChange }: UserContextInputProps) {
             }}
             placeholder="Your role, priorities, risk tolerance, life stage..."
             rows={3}
-            className="w-full resize-none rounded-lg border border-white/10 bg-black/30 px-4 py-3 font-inter text-sm font-light text-debate-text placeholder:text-gray-600 focus:border-violet-500/30 focus:outline-none"
+            className="w-full resize-none rounded-lg border border-surface-border bg-surface px-4 py-3 font-inter text-sm font-light text-debate-text placeholder:text-foreground-muted focus:border-violet-300 focus:outline-none dark:focus:border-violet-600"
           />
-          <p className="mt-2 font-mono text-[10px] text-gray-600">
+          <p className="mt-2 font-mono text-[10px] text-foreground-muted">
             Helps agents speak to your situation — but they always judge your question on its
             own merits, not your history.
           </p>
@@ -50,7 +50,7 @@ export function UserContextInput({ value, onChange }: UserContextInputProps) {
             <button
               type="button"
               onClick={handleClear}
-              className="mt-2 font-mono text-[10px] text-gray-500 hover:text-gray-400"
+              className="mt-2 font-mono text-[10px] text-foreground-muted hover:text-foreground"
             >
               Clear saved context
             </button>

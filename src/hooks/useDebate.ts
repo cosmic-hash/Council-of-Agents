@@ -14,8 +14,26 @@ interface UseDebateOptions {
   onError?: (message: string) => void;
 }
 
+function friendlyError(message: string): string {
+  const lower = message.toLowerCase();
+  if (lower.includes("api key") || lower.includes("401") || lower.includes("403")) {
+    return "API key invalid or expired";
+  }
+  if (lower.includes("fetch") || lower.includes("network") || lower.includes("failed to fetch")) {
+    return "Council unreachable — try preview mode";
+  }
+  if (lower.includes("quota") || lower.includes("limit: 0") || lower.includes("free_tier")) {
+    return "Gemini quota issue — check GEMINI_MODEL in .env.local or use Try preview";
+  }
+  if (lower.includes("not configured") || lower.includes("no llm")) {
+    return "Add GEMINI_API_KEY to .env.local for live debates";
+  }
+  return message;
+}
+
 export function useDebate() {
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isPreview, setIsPreview] = useState(false);
   const [messages, setMessages] = useState<DebateMessage[]>([]);
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [verdict, setVerdict] = useState<string | null>(null);
@@ -23,11 +41,12 @@ export function useDebate() {
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const startDebate = useCallback(
+  const runDebate = useCallback(
     async (
       question: string,
       mode: DebateMode,
       userContext: string,
+      preview: boolean,
       callbacks: UseDebateOptions = {}
     ) => {
       abortRef.current?.abort();
@@ -35,6 +54,7 @@ export function useDebate() {
       abortRef.current = controller;
 
       setIsStreaming(true);
+      setIsPreview(preview);
       setMessages([]);
       setExchanges([]);
       setVerdict(null);
@@ -47,7 +67,7 @@ export function useDebate() {
         const response = await fetch("/api/debate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question, mode, userContext }),
+          body: JSON.stringify({ question, mode, userContext, preview }),
           signal: controller.signal,
         });
 
@@ -89,7 +109,8 @@ export function useDebate() {
         }
       } catch (err) {
         if ((err as Error).name === "AbortError") return;
-        const message = err instanceof Error ? err.message : "Unknown error";
+        const raw = err instanceof Error ? err.message : "Unknown error";
+        const message = friendlyError(raw);
         setError(message);
         callbacks.onError?.(message);
       } finally {
@@ -165,12 +186,26 @@ export function useDebate() {
       case "done":
         callbacks.onDone?.();
         break;
-      case "error":
-        setError(data.message as string);
-        callbacks.onError?.(data.message as string);
+      case "error": {
+        const message = friendlyError(data.message as string);
+        setError(message);
+        callbacks.onError?.(message);
         break;
+      }
     }
   };
+
+  const startDebate = useCallback(
+    (question: string, mode: DebateMode, userContext: string, callbacks?: UseDebateOptions) =>
+      runDebate(question, mode, userContext, false, callbacks),
+    [runDebate]
+  );
+
+  const startPreviewDebate = useCallback(
+    (question: string, mode: DebateMode, userContext: string, callbacks?: UseDebateOptions) =>
+      runDebate(question, mode, userContext, true, callbacks),
+    [runDebate]
+  );
 
   const cancelDebate = useCallback(() => {
     abortRef.current?.abort();
@@ -184,16 +219,19 @@ export function useDebate() {
     setVerdict(null);
     setCurrentPhase(null);
     setError(null);
+    setIsPreview(false);
   }, [cancelDebate]);
 
   return {
     isStreaming,
+    isPreview,
     messages,
     exchanges,
     verdict,
     currentPhase,
     error,
     startDebate,
+    startPreviewDebate,
     cancelDebate,
     resetDebate,
     agentOrder: DEBATE_AGENTS_ORDER,

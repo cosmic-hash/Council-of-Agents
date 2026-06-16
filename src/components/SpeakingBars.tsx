@@ -16,6 +16,7 @@ export function SpeakingBars({ color, active }: SpeakingBarsProps) {
           className="speaking-bar w-1 rounded-sm"
           style={{
             backgroundColor: color,
+            color,
             height: "20px",
             animationDelay: `${i * 0.15}s`,
           }}

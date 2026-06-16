@@ -18,7 +18,7 @@ function SpeakingBarPreview({ energy }: { energy: number }) {
       {heights.map((h, i) => (
         <motion.div
           key={i}
-          className="w-1 rounded-sm bg-violet-500/60"
+          className="w-1 rounded-sm bg-violet-400/50"
           style={{ height: `${h * 16}px`, transformOrigin: "bottom" }}
           animate={{ scaleY: [0.3, h, 0.3] }}
           transition={{
@@ -50,15 +50,15 @@ export function ModeSelector({ selected, onSelect }: ModeSelectorProps) {
             whileTap={{ scale: 0.98 }}
             className={`group relative rounded-xl border p-5 text-left transition-all ${
               isSelected
-                ? "border-violet-500/50 bg-violet-500/10 shadow-lg shadow-violet-500/10"
-                : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/8"
+                ? "border-violet-300 bg-violet-50 shadow-md shadow-violet-100 dark:border-violet-700 dark:bg-violet-950/40 dark:shadow-violet-900/20"
+                : "border-surface-border bg-surface shadow-sm hover:border-foreground-muted/30 hover:shadow"
             } ${mode.desaturated ? "saturate-[0.85]" : ""}`}
           >
             <div className="mb-3 text-2xl">{mode.icon}</div>
-            <h3 className="mb-1 font-inter text-sm font-semibold text-cream">
+            <h3 className="mb-1 font-inter text-sm font-semibold text-ink">
               {mode.label}
             </h3>
-            <p className="mb-4 font-inter text-xs font-light text-gray-500">
+            <p className="mb-4 font-inter text-xs font-light text-foreground-muted">
               {mode.description}
             </p>
             <SpeakingBarPreview energy={energy} />

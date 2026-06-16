@@ -44,8 +44,8 @@ export const MODES: Record<DebateMode, ModeConfig> = {
     label: "Normal",
     icon: "🕊",
     description: "Thoughtful. Balanced. Like a board of advisors.",
-    typingSpeed: 28,
-    pauseBetweenSentences: 800,
+    typingSpeed: 55,
+    pauseBetweenSentences: 200,
     transitionSpeed: 700,
     systemPromptInjection:
       "Speak thoughtfully and with nuance. Acknowledge the complexity of this decision. Be complete.",
@@ -56,8 +56,8 @@ export const MODES: Record<DebateMode, ModeConfig> = {
     label: "Moderate",
     icon: "⚡",
     description: "Sharp. Focused. Like a startup all-hands.",
-    typingSpeed: 45,
-    pauseBetweenSentences: 500,
+    typingSpeed: 85,
+    pauseBetweenSentences: 150,
     transitionSpeed: 400,
     systemPromptInjection:
       "Be direct. Challenge weak assumptions. Name the agents you're responding to. Don't over-qualify.",
@@ -68,8 +68,8 @@ export const MODES: Record<DebateMode, ModeConfig> = {
     label: "Aggressive",
     icon: "🔥",
     description: "Brutal. Unfiltered. Like a war room.",
-    typingSpeed: 65,
-    pauseBetweenSentences: 200,
+    typingSpeed: 110,
+    pauseBetweenSentences: 80,
     transitionSpeed: 200,
     systemPromptInjection:
       "Be brutally direct. No softening. Call out weak reasoning by name. Make your strongest possible case without diplomacy. This person wants the raw truth.",
@@ -78,9 +78,21 @@ export const MODES: Record<DebateMode, ModeConfig> = {
 };
 
 export const SPEED_PRESETS = {
-  slow: 20,
+  slow: 40,
   normal: null as number | null,
-  fast: 80,
+  fast: 120,
+  turbo: 150,
 };
+
+export const AUTO_ADVANCE_KEY = "council_auto_advance";
+export const THEME_KEY = "council_theme";
+
+export const COUNCIL_ROSTER_ORDER = [
+  "optimist",
+  "contrarian",
+  "pragmatist",
+  "oracle",
+  "judge",
+] as const;
 
 export const USER_CONTEXT_KEY = "council_user_context";

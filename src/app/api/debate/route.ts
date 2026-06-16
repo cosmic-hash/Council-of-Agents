@@ -1,10 +1,12 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
 import { AGENTS } from "@/lib/constants";
-import { buildAgentPrompt, parseSentiment } from "@/lib/prompts";
-import type { AgentId, DebateMode } from "@/lib/types";
-import { DEBATE_AGENTS_ORDER } from "@/lib/types";
 import { computeHeatDelta } from "@/lib/heat";
+import { getMaxTokens, hasAnyLlmApiKey } from "@/lib/env";
+import { callLLM } from "@/lib/llm";
+import { runMockDebate } from "@/lib/mockDebate";
+import { buildAgentPrompt, parseSentiment } from "@/lib/prompts";
+import type { DebateMode } from "@/lib/types";
+import { DEBATE_AGENTS_ORDER } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,36 +15,14 @@ function encodeSSE(event: string, data: Record<string, unknown>): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-async function callAgent(
-  client: Anthropic,
-  model: string,
-  maxTokens: number,
-  prompt: string
-): Promise<string> {
-  const response = await client.messages.create({
-    model,
-    max_tokens: maxTokens,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const block = response.content[0];
-  if (block.type !== "text") return "";
-  return block.text;
-}
-
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
-  const maxTokens = parseInt(process.env.ANTHROPIC_MAX_TOKENS || "500", 10);
+  let body: {
+    question: string;
+    mode: DebateMode;
+    userContext?: string;
+    preview?: boolean;
+  };
 
-  if (!apiKey) {
-    return new Response(JSON.stringify({ message: "ANTHROPIC_API_KEY not configured" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  let body: { question: string; mode: DebateMode; userContext?: string };
   try {
     body = await request.json();
   } catch {
@@ -52,7 +32,8 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const { question, mode, userContext = "" } = body;
+  const { question, mode, userContext = "", preview = false } = body;
+
   if (!question?.trim()) {
     return new Response(JSON.stringify({ message: "Question is required" }), {
       status: 400,
@@ -60,11 +41,18 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const client = new Anthropic({ apiKey });
+  const hasKey = hasAnyLlmApiKey();
+
+  if (!preview && !hasKey) {
+    return new Response(
+      JSON.stringify({
+        message: "Add GEMINI_API_KEY to .env.local for live debates, or use preview mode",
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   const encoder = new TextEncoder();
-  let heatLevel = 0;
-  const openingStatements: Record<string, string> = {};
-  const fullTranscript: string[] = [];
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -73,25 +61,37 @@ export async function POST(request: NextRequest) {
       };
 
       try {
-        // Phase 1 — Opening Statements
+        if (preview) {
+          await runMockDebate(question, mode, userContext, send);
+          return;
+        }
+
+        const maxTokens = getMaxTokens();
+
+        let heatLevel = 0;
+        const openingStatements: Record<string, string> = {};
+        const fullTranscript: string[] = [];
+
         send("phase", { phase: "opening", label: "Opening Statements", heatLevel });
 
         for (const agentId of DEBATE_AGENTS_ORDER) {
           send("agent_start", { agentId, phase: "opening" });
 
           const prompt = buildAgentPrompt(agentId, mode, question, userContext);
-          const raw = await callAgent(client, model, maxTokens, prompt);
+          const raw = await callLLM(prompt, maxTokens);
           const { text, sentiment } = parseSentiment(raw);
 
           openingStatements[agentId] = text;
           fullTranscript.push(`${AGENTS[agentId].name}: ${text}`);
 
-          heatLevel = Math.max(0, Math.min(100, heatLevel + computeHeatDelta(agentId, "opening", sentiment)));
+          heatLevel = Math.max(
+            0,
+            Math.min(100, heatLevel + computeHeatDelta(agentId, "opening", sentiment))
+          );
           send("agent_message", { agentId, content: text, phase: "opening", sentiment });
           send("heat_update", { level: heatLevel });
         }
 
-        // Phase 2 — Rebuttals
         send("phase", { phase: "rebuttal", label: "Rebuttals", heatLevel });
 
         for (const agentId of DEBATE_AGENTS_ORDER) {
@@ -101,23 +101,25 @@ export async function POST(request: NextRequest) {
             Object.entries(openingStatements).filter(([id]) => id !== agentId)
           );
           const prompt = buildAgentPrompt(agentId, mode, question, userContext, others);
-          const raw = await callAgent(client, model, maxTokens, prompt);
+          const raw = await callLLM(prompt, maxTokens);
           const { text, sentiment } = parseSentiment(raw);
 
           fullTranscript.push(`${AGENTS[agentId].name} (rebuttal): ${text}`);
 
-          heatLevel = Math.max(0, Math.min(100, heatLevel + computeHeatDelta(agentId, "rebuttal", sentiment)));
+          heatLevel = Math.max(
+            0,
+            Math.min(100, heatLevel + computeHeatDelta(agentId, "rebuttal", sentiment))
+          );
           send("agent_message", { agentId, content: text, phase: "rebuttal", sentiment });
           send("heat_update", { level: heatLevel });
         }
 
-        // Phase 3 — Verdict
         send("phase", { phase: "verdict", label: "The Verdict", heatLevel });
 
         const judgePrompt = `${buildAgentPrompt("judge", mode, question, userContext)}\n\nFull debate transcript:\n${fullTranscript.join("\n\n")}`;
         send("agent_start", { agentId: "judge", phase: "verdict" });
 
-        const rawVerdict = await callAgent(client, model, maxTokens + 200, judgePrompt);
+        const rawVerdict = await callLLM(judgePrompt, maxTokens + 200);
         const { text: verdictText } = parseSentiment(rawVerdict);
 
         heatLevel = Math.max(0, heatLevel - 30);
