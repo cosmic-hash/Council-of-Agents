@@ -2,6 +2,133 @@
 
 Five specialized AI agents debate your hardest decisions in real time.
 
+## How it works
+
+These diagrams live in this README as [Mermaid](https://mermaid.live) blocks — edit the text below to update the visuals.
+
+**Legend:** steps with the same number group run **in order**; steps marked **∥ parallel** run at the same time as another track.
+
+### 1. User journey
+
+```mermaid
+flowchart LR
+  S1["① Setup\npage.tsx — form state"]
+  S2a["②a Preview\nrunDebateSession(true)"]
+  S2b["②b Live\nrunDebateSession(false)"]
+  S3["③ useDebate\nfetch /api/debate"]
+  S4["④ Duel View\nDuelView.tsx scenes"]
+  S5["⑤ Thread View\noptional read mode"]
+  S6["⑥ Done\nreplay / new question"]
+
+  S1 --> S2a
+  S1 --> S2b
+  S2a --> S3
+  S2b --> S3
+  S3 --> S4
+  S4 --> S5
+  S4 --> S6
+  S5 --> S6
+```
+
+**What runs:** `page.tsx` collects the question, mode, and context, then calls `runDebateSession` which hands off to `useDebate` → `POST /api/debate`. **Parallel:** while ④ Duel plays scenes at your pace, ③ keeps receiving SSE in the background and appends new `exchanges` / `verdict` to React state; `AmbientBackground` and heat hooks update on every message **∥ parallel** to the scene you are watching.
+
+### 2. Debate generation (server)
+
+`POST /api/debate` streams Server-Sent Events. LLM calls are **sequential** (one agent at a time); the browser read loop runs **∥ parallel** to whatever Duel scene is on screen.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant UI as ① useDebate (page.tsx)
+  participant API as ② /api/debate
+  participant LLM as ③ Gemini / Anthropic
+  participant Mock as mockDebate
+
+  UI->>API: POST question, mode, context, preview?
+  alt preview
+    API->>Mock: runMockDebate()
+    Mock-->>UI: SSE agent_message … done
+  else live
+    API-->>UI: phase opening
+    loop ④ Opening ×4 agents (sequential)
+      API-->>UI: agent_start
+      API->>LLM: buildAgentPrompt(opening)
+      LLM-->>API: text + sentiment
+      API-->>UI: agent_message, heat_update
+    end
+    API-->>UI: phase rebuttal
+    loop ⑤ Rebuttal ×4 agents (sequential)
+      API->>LLM: buildAgentPrompt(rebuttal + others)
+      LLM-->>API: text + sentiment
+      API-->>UI: agent_message, heat_update
+    end
+    API-->>UI: phase verdict
+    API->>LLM: ⑥ judge + full transcript
+    LLM-->>API: verdict
+    API-->>UI: verdict, heat_update, done
+  end
+```
+
+**What runs:** `route.ts` loops `DEBATE_AGENTS_ORDER` twice (opening, then rebuttal), then one judge call — each step awaits `callLLM` before the next. **Parallel:** the SSE `ReadableStream` write on the server and the client `fetch` reader in `useDebate` overlap continuously; each `agent_message` also triggers `onHeatUpdate` / `updateHeat` in `page.tsx` **∥ parallel** to Duel scene playback.
+
+**Agent order (sequential):** Optimist → Contrarian → Pragmatist → Oracle → Judge.
+
+### 3. Duel View scenes (client)
+
+Duel walks a numbered scene list; advancement is **sequential** (Space / auto-advance). New exchange text arrives from SSE **∥ parallel** while you may still be on an earlier scene.
+
+```mermaid
+flowchart TD
+  N1["① Question scene\nuseTyping letter mode"]
+  N2["② Anchor question\nquestionAnchored → stageReady"]
+  N3["③–⑩ Exchange scenes\none per SSE exchange"]
+  N3o["③–⑥ Opening\nCenteredStage"]
+  N3r["⑦–⑩ Rebuttal\nSplitStage"]
+  N4["⑪ Judge intro\n1.6s timer → auto-advance"]
+  N5["⑫ Verdict scene\nuseSyncedNarration or useTyping"]
+  N6["⑬ End actions\nreplay / thread / new question"]
+
+  N1 --> N2
+  N2 --> N3
+  N3 --> N3o
+  N3 --> N3r
+  N3o --> N4
+  N3r --> N4
+  N4 --> N5
+  N5 --> N6
+```
+
+**What runs:** `DuelView.tsx` builds `scenes[]` from `exchanges` + `verdict`; each scene picks narration hooks and stage layout (`CenteredStage` / `SplitStage`). **Parallel:** scene ③–⑩ only advances when `canAdvance` sees content for the next exchange — so SSE step 2 on the server and Duel scene ⑤ on screen can be at different numbers at once; `CouncilRoster`, `SentimentPulse`, and `DebateStatusBar` re-render on every word tick **∥ parallel** to the active scene.
+
+### 4. Voice + text sync (client)
+
+One **master clock** per path. Old design ran typing + Web Speech on separate timers (**∥ drift**); Piper path locks text to audio progress.
+
+```mermaid
+flowchart TD
+  V0["① Voice toggle?\nVoiceToggle + localStorage"]
+  V1["② Voice off\nuseTyping — WPM timer"]
+  V2["③ Voice on → Piper?\nsynthesizeSentence"]
+  V2y["④ Piper OK\nuseSyncedNarration"]
+  V2n["④ Piper fail\nuseVoiceOut fallback"]
+  V3a["⑤a Per sentence sequential\nPiper → WAV → Audio.play"]
+  V3b["⑤b ∥ parallel per sentence\nRAF reads audio.currentTime"]
+  V3c["⑤c Fallback ∥ parallel\nWeb Speech + gated useTyping"]
+
+  V0 -->|off| V1
+  V0 -->|on| V2
+  V2 -->|yes| V2y --> V3a --> V3b
+  V2 -->|no| V2n --> V3c
+```
+
+**What runs:** `useSyncedNarration` splits text into sentences, calls `piper.ts` → `TtsSession.predict`, sets `playbackRate` from WPM, then drives `displayed` text from `audio.currentTime / duration`. **Parallel vs sequential:** sentences are **sequential** (⑤a); inside each sentence, `audio.play()` and the `requestAnimationFrame` loop are **∥ parallel** (⑤b); fallback path speaks one sentence via `useVoiceOut` while `useTyping` types only that sentence (⑤c, still **∥ parallel**, but gated so text never races ahead).
+
+| Step | Path | Executes | Master clock | Parallel with |
+|------|------|----------|--------------|---------------|
+| ② | Voice off | `useTyping` | WPM `setTimeout` | — |
+| ④–⑤b | Piper | `useSyncedNarration` + `piper.ts` | Audio element | RAF text reveal **∥** audio |
+| ④–⑤c | Fallback | `useVoiceOut` + `useTyping` | Web Speech per sentence | Typing current sentence **∥** speech |
+
 ## Stack
 
 - Next.js 14 (App Router, TypeScript)
